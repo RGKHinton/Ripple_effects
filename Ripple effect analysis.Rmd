@@ -1,0 +1,277 @@
+---
+title: "Ripple effects code"
+output: html_document
+date: "2025-07-10"
+---
+```{r}
+library(dplyr)
+
+# Load CSVs
+gfg1<- read.csv("//WURNET.NL/Homes/hinto001/My Documents/Water governence/Risk pool/gro for good/sensitive/Copy of Final_Master_Data_Jan2014_SENSITIVE.csv")
+#INCLUDING LATRINE. Diarrhoea under 15 yr
+
+gfg2<- read.csv("//WURNET.NL/Homes/hinto001/My Documents/Water governence/Risk pool/gro for good/sensitive/Copy of Final_Master_Data_May2015_SENSITIVE.csv")
+
+gfg3<- read.csv("//WURNET.NL/Homes/hinto001/My Documents/Water governence/Risk pool/gro for good/sensitive/Copy of Final_Master_Data_Oct2016_SENSITIVE.csv")
+
+# Standardize column names for merge
+colnames(gfg1)[colnames(gfg1) == "HH_seq_no"] <- "Household_ID"
+gfg1 <- rename_with(gfg1, ~ paste0(., "_Year1"))
+gfg2 <- rename_with(gfg2, ~ paste0(., "_Year2"))
+gfg3 <- rename_with(gfg3, ~ paste0(., "_Year3"))
+
+# Reassign Household_ID for merging
+gfg1 <- gfg1 %>% rename(Household_ID = Household_ID_Year1)
+gfg2 <- gfg2 %>% rename(Household_ID = Household_ID_Year2)
+gfg3 <- gfg3 %>% rename(Household_ID = Household_ID_Year3)
+
+gfg1$Household_ID <- as.character(gfg1$Household_ID)
+gfg2$Household_ID <- as.character(gfg2$Household_ID)
+gfg3$Household_ID <- as.character(gfg3$Household_ID)
+
+
+# Merge datasets
+merged <- gfg1 %>%
+  full_join(gfg2, by = "Household_ID") %>%
+  full_join(gfg3, by = "Household_ID") %>%
+  distinct() %>%
+  filter(!is.na(Household_ID) & Household_ID != "9999")
+
+# Keep only rows where Year3 is "Functional"
+functional_Y3 <- merged %>%
+  filter(functionality_status_Year3 == "Functional")
+
+```
+
+```{r}
+NF_status <- c("Non_functional_less_than_1_year_", "Non_functional_more_than_1_year_")
+
+# Functional in all 3 years
+funct_all_surveys <- functional_Y3 %>%
+  filter(
+    Func_Original_Year1 == "Functional",
+    functionality_status_Year2 == "Functional"
+  )
+
+# Non-functional 2 years ago, now functional
+nf_2yr_ago <- functional_Y3 %>%
+  filter(
+    Func_Original_Year1 %in% NF_status,
+    functionality_status_Year2 == "Functional"
+  )
+
+# Non-functional 1 year ago, now functional
+nf_1_yr_ago <- functional_Y3 %>%
+  filter(
+    Func_Original_Year1 == "Functional",
+    functionality_status_Year2 %in% NF_status
+  )
+
+# Combine if needed
+all_surveys_with_func_final_yr <- bind_rows(nf_2yr_ago, nf_1_yr_ago, funct_all_surveys)
+
+```
+
+#Dry season
+```{r}
+# Total counts from data
+total_functional <- nrow(funct_all_surveys)
+total_nonfunctional_1y <- nrow(nf_1_yr_ago)
+total_nonfunctional_2y <- nrow(nf_2yr_ago)
+
+# Chi-square test function
+perform_chi_square <- function(observed) {
+  test_result <- chisq.test(observed)
+  return(test_result$p.value)
+}
+
+# Source categories to test
+sources <- c(
+  "REFERENCE_HANDPUMP", "Other_handpump", 
+  "Piped_to_neighbour_s_yard", "Piped_to_yard_dwelling",
+  "Unprotected_well_PRIVATE_", "Public_tap_Kiosk",
+  "Submersible_pump_PRIVATE_", "Submersible_pump_PUBLIC_"
+)
+
+# Function to build contingency matrix
+get_contingency_table <- function(source_name, group_func, group_nf) {
+  count_func <- sum(group_func$main_drinking_dry_func_Year3 == source_name)
+  count_nf <- sum(group_nf$main_drinking_dry_func_Year3 == source_name)
+  
+  matrix(c(
+    count_func, nrow(group_func) - count_func,
+    count_nf, nrow(group_nf) - count_nf
+  ), nrow = 2, byrow = TRUE)
+}
+
+# Contingency tables for 1-year ago
+contingency_tables_1y <- lapply(sources, function(src) {
+  get_contingency_table(src, funct_all_surveys, nf_1_yr_ago)
+})
+names(contingency_tables_1y) <- sources
+
+# Contingency tables for 2-years ago
+contingency_tables_2y <- lapply(sources, function(src) {
+  get_contingency_table(src, funct_all_surveys, nf_2yr_ago)
+})
+names(contingency_tables_2y) <- sources
+
+# P-values
+p_values_1y <- sapply(contingency_tables_1y, perform_chi_square)
+p_values_2y <- sapply(contingency_tables_2y, perform_chi_square)
+
+# Output p-values
+print("P-values for 1-year non-functional group:")
+print(p_values_1y)
+
+print("P-values for 2-year non-functional group:")
+print(p_values_2y)
+```
+
+#wet season
+```{r}
+# Total counts from data
+total_functional <- nrow(funct_all_surveys)
+total_nonfunctional_1y <- nrow(nf_1_yr_ago)
+total_nonfunctional_2y <- nrow(nf_2yr_ago)
+
+# Chi-square test function
+perform_chi_square <- function(observed) {
+  test_result <- chisq.test(observed)
+  return(test_result$p.value)
+}
+
+# Source categories to test
+sources <- c(
+  "REFERENCE_HANDPUMP", "Other_handpump", 
+  "Piped_to_neighbour_s_yard", "Piped_to_yard_dwelling",
+  "Unprotected_well_PRIVATE_", "Public_tap_Kiosk",
+  "Submersible_pump_PRIVATE_", "Submersible_pump_PUBLIC_"
+)
+
+# Function to build contingency matrix
+get_contingency_table <- function(source_name, group_func, group_nf) {
+  count_func <- sum(group_func$main_drinking_wet_hp_func_Year3 == source_name)
+  count_nf <- sum(group_nf$main_drinking_wet_hp_func_Year3 == source_name)
+  
+  matrix(c(
+    count_func, nrow(group_func) - count_func,
+    count_nf, nrow(group_nf) - count_nf
+  ), nrow = 2, byrow = TRUE)
+}
+
+# Contingency tables for 1-year ago
+contingency_tables_1y <- lapply(sources, function(src) {
+  get_contingency_table(src, funct_all_surveys, nf_1_yr_ago)
+})
+names(contingency_tables_1y) <- sources
+
+# Contingency tables for 2-years ago
+contingency_tables_2y <- lapply(sources, function(src) {
+  get_contingency_table(src, funct_all_surveys, nf_2yr_ago)
+})
+names(contingency_tables_2y) <- sources
+
+# P-values
+p_values_1y <- sapply(contingency_tables_1y, perform_chi_square)
+p_values_2y <- sapply(contingency_tables_2y, perform_chi_square)
+
+# Output p-values
+print("P-values for 1-year non-functional group:")
+print(p_values_1y)
+
+print("P-values for 2-year non-functional group:")
+print(p_values_2y)
+```
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(viridis)
+
+# Create the data frame
+library(tidyverse)
+
+# Step 1: Create the original data
+concern_data <- data.frame(
+  Concern = c("Unreliable", "Not enough water for agriculture", "Not enough water for home", 
+              "Not enough water for livestock", "Que too long", "Unsafe to drink", 
+              "Water is seasonal", "Water is costly", "Water is too far away"),
+  Consistently_Functional = c(8.81, 3.90, 11.45, 2.04, 15.89, 11.33, 1.80, 6.47, 23.32),
+  Non_Functional_1_Year = c(16.16, 2.02, 14.14, 2.02, 22.22, 22.22, 8.08, 8.08, 27.27),
+  Non_Functional_2_Years = c(16.96, 3.51, 12.87, 3.51, 11.11, 5.85, 1.75, 9.94, 23.39)
+)
+
+# Step 2: Pivot longer
+long_data <- pivot_longer(concern_data, 
+                          cols = c("Consistently_Functional", "Non_Functional_1_Year", "Non_Functional_2_Years"),
+                          names_to = "Group", values_to = "Percent")
+
+# Step 3: Relabel Group
+long_data$Group <- recode(long_data$Group,
+                          "Consistently_Functional" = "Functional in All Surveys",
+                          "Non_Functional_1_Year" = "Non-functional 1 Year",
+                          "Non_Functional_2_Years" = "Non-functional 2 Years")
+
+# Step 4: Rename Concerns to short labels
+concern_rename <- c(
+  "Not enough water for agriculture" = "Agricultural use",
+  "Not enough water for home" = "Home use",
+  "Not enough water for livestock" = "Livestock use",
+  "Que too long" = "Queue",  
+  "Unreliable" = "Unreliablity",
+  "Unsafe to drink" = "Quality",
+  "Water is costly" = "Price",
+  "Water is seasonal" = "Seasonality",
+  "Water is too far away" = "Distance"
+)
+long_data$Concern_Short <- concern_rename[long_data$Concern]
+
+# Set desired order of concerns
+long_data$Concern_Short <- factor(
+  long_data$Concern_Short,
+  levels = c("Agricultural use", "Home use", "Livestock use", "Distance",
+             "Price", "Quality", "Seasonality", "Queue", "Unreliablity")
+)
+
+
+# Step 5: Add asterisk annotations
+long_data$Asterisk <- ""
+long_data$Asterisk[long_data$Concern_Short %in% c("Unreliablity", "Queue", "Quality") &
+                   long_data$Group %in% c("Non-functional 1 Year", "Non-functional 2 Years")] <- "*"
+long_data$Asterisk[long_data$Concern_Short %in% c("Livestock Use", "Price") &
+                   long_data$Group == "Non-functional 2 Years"] <- "*"
+long_data$Asterisk[long_data$Concern_Short == "Seasonality" &
+                   long_data$Group == "Non-functional 1 Year"] <- "*"
+
+# Step 6: Plot
+ggplot(long_data, aes(x = Concern_Short, y = Percent, fill = Group)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+  geom_text(aes(label = Asterisk),
+            position = position_dodge(width = 0.9),
+            vjust = -0.5, size = 5, color = "black") +
+  scale_fill_manual(
+    values = c(
+      "Functional in All Surveys" = "#60a6d1",   # Blue
+      "Non-functional 1 Year" = "#ff6242",       # Red-orange
+      "Non-functional 2 Years" = "#c61a09"       # Deep red
+    )
+  ) +
+  labs(title = "Water User Concerns by Water Source Functionality",
+       y = "Percent of Users Concerned",
+       x = "Concern",
+       fill = "Group") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    plot.title = element_text(size = 16, face = "bold"),
+    legend.title = element_text(size = 13),
+    legend.text = element_text(size = 12)
+  )
+
+```
